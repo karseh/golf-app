@@ -3,14 +3,24 @@ import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, TextInput 
 import { Golfer, Course, TeeBox, GameFormat, ScoringMode, Wagers, SkinsWager, Game } from '../types';
 import { BAY_AREA_COURSES } from '../data/bayAreaCourses';
 import { theme } from '../theme';
-import { X, Plus, Check, UserPlus, Flag, Target, Users, Layers, Shield, Flame, DollarSign } from 'lucide-react-native';
+import { X, Plus, Check, UserPlus, Flag, Target, Users, Layers, Shield, Flame, DollarSign, Percent } from 'lucide-react-native';
 
 interface NewGameModalProps {
   visible: boolean;
   onClose: () => void;
   golfers: Golfer[];
   onAddGolfer: (golfer: Golfer) => void;
-  onCreateGame: (name: string, course: Course, tee: TeeBox, format: GameFormat, mode: ScoringMode, wagers: Wagers, skinsWager: SkinsWager, selectedGolferIds: string[]) => void;
+  onCreateGame: (
+    name: string,
+    course: Course,
+    tee: TeeBox,
+    format: GameFormat,
+    mode: ScoringMode,
+    allowancePct: number,
+    wagers: Wagers,
+    skinsWager: SkinsWager,
+    selectedGolferIds: string[]
+  ) => void;
 }
 
 export const NewGameModal: React.FC<NewGameModalProps> = ({
@@ -29,6 +39,7 @@ export const NewGameModal: React.FC<NewGameModalProps> = ({
   const [selectedGolferIds, setSelectedGolferIds] = useState<string[]>([golfers[0]?.id, golfers[1]?.id].filter(Boolean));
   const [gameFormat, setGameFormat] = useState<GameFormat>('MATCH_PLAY_1V1');
   const [scoringMode, setScoringMode] = useState<ScoringMode>('NET');
+  const [handicapAllowancePct, setHandicapAllowancePct] = useState<number>(1.0);
   const [wagers, setWagers] = useState<Wagers>({ front9: 10, back9: 10, overall18: 10 });
   const [skinsWager, setSkinsWager] = useState<SkinsWager>({ skinAmount: 5 });
 
@@ -77,6 +88,7 @@ export const NewGameModal: React.FC<NewGameModalProps> = ({
       selectedTee,
       gameFormat,
       scoringMode,
+      handicapAllowancePct,
       wagers,
       skinsWager,
       selectedGolferIds
@@ -266,6 +278,44 @@ export const NewGameModal: React.FC<NewGameModalProps> = ({
                 })}
               </View>
 
+              {/* Scoring Mode & USGA Allowance */}
+              <Text style={styles.label}>Scoring Mode & Allowance</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                <TouchableOpacity
+                  style={[styles.pill, scoringMode === 'NET' && styles.pillActive]}
+                  onPress={() => setScoringMode('NET')}
+                >
+                  <Text style={[styles.pillText, scoringMode === 'NET' && styles.pillTextActive]}>Net (Handicap)</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.pill, scoringMode === 'GROSS' && styles.pillActive]}
+                  onPress={() => setScoringMode('GROSS')}
+                >
+                  <Text style={[styles.pillText, scoringMode === 'GROSS' && styles.pillTextActive]}>Gross (Scratch)</Text>
+                </TouchableOpacity>
+              </View>
+
+              {scoringMode === 'NET' && (
+                <View style={{ marginBottom: 16 }}>
+                  <Text style={styles.subLabel}>Handicap Allowance %</Text>
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    {[1.0, 0.9, 0.85, 0.8].map(pct => (
+                      <TouchableOpacity
+                        key={pct}
+                        style={[styles.pill, handicapAllowancePct === pct && styles.pillActive]}
+                        onPress={() => setHandicapAllowancePct(pct)}
+                      >
+                        <Percent size={12} color={handicapAllowancePct === pct ? theme.colors.primary : theme.colors.textMuted} />
+                        <Text style={[styles.pillText, handicapAllowancePct === pct && styles.pillTextActive]}>
+                          {Math.round(pct * 100)}%
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+
               {gameFormat === 'SKINS' ? (
                 <View style={styles.wagerBox}>
                   <Text style={styles.label}>Skins Amount per Hole ($)</Text>
@@ -385,6 +435,10 @@ const styles = StyleSheet.create({
   iconBox: { width: 36, height: 36, borderRadius: 10, backgroundColor: theme.colors.subtleBg, justifyContent: 'center', alignItems: 'center' },
   formatTitle: { fontSize: 14, fontWeight: '800', color: theme.colors.textPrimary },
   formatDesc: { fontSize: 11, color: theme.colors.textSecondary, marginTop: 1 },
+  pill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: theme.colors.background, borderWidth: 1, borderColor: theme.colors.cardBorder },
+  pillActive: { backgroundColor: theme.colors.primaryLight, borderColor: theme.colors.primaryBorder },
+  pillText: { fontSize: 11, fontWeight: '700', color: theme.colors.textSecondary },
+  pillTextActive: { color: theme.colors.primary },
   wagerBox: { backgroundColor: theme.colors.background, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: theme.colors.cardBorder, marginTop: 10 },
   wagerInputLarge: { backgroundColor: theme.colors.cardBg, borderWidth: 1, borderColor: theme.colors.cardBorder, borderRadius: 10, padding: 10, fontSize: 18, fontWeight: '800', color: theme.colors.textPrimary, textAlign: 'center' },
   wagerInput: { backgroundColor: theme.colors.cardBg, borderWidth: 1, borderColor: theme.colors.cardBorder, borderRadius: 8, padding: 8, fontSize: 14, fontWeight: '800', color: theme.colors.textPrimary, textAlign: 'center' },

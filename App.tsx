@@ -58,6 +58,7 @@ export default function App() {
     tee: TeeBox,
     format: GameFormat,
     mode: ScoringMode,
+    allowancePct: number,
     wagers: Wagers,
     skinsWager: SkinsWager,
     selectedGolferIds: string[]
@@ -69,7 +70,7 @@ export default function App() {
         tee.slopeRating,
         tee.courseRating,
         tee.par,
-        1.0
+        allowancePct
       );
       return {
         golfer,
@@ -84,7 +85,7 @@ export default function App() {
       selectedTee: tee,
       gameFormat: format,
       scoringMode: mode,
-      handicapAllowancePct: 1.0,
+      handicapAllowancePct: allowancePct,
       wagers,
       skinsWager,
       participants: gameParticipants,
@@ -113,9 +114,17 @@ export default function App() {
     setGameSubTab('scoring');
   };
 
-  // Handlers for Golfer Management
+  // Handlers for Golfer Management (CRUD)
   const handleAddGolfer = (newGolfer: Golfer) => {
     setGolfers(prev => [...prev, newGolfer]);
+  };
+
+  const handleUpdateGolfer = (updatedGolfer: Golfer) => {
+    setGolfers(prev => prev.map(g => g.id === updatedGolfer.id ? updatedGolfer : g));
+  };
+
+  const handleDeleteGolfer = (golferId: string) => {
+    setGolfers(prev => prev.filter(g => g.id !== golferId));
   };
 
   // Handlers for Active Game Score Edits
@@ -318,6 +327,7 @@ export default function App() {
             <PlayerDashboard
               golfers={golfers}
               headToHeadMatrix={headToHeadMatrix}
+              games={games}
             />
           )}
 
@@ -325,6 +335,8 @@ export default function App() {
             <GolferRoster
               golfers={golfers}
               onAddGolfer={handleAddGolfer}
+              onUpdateGolfer={handleUpdateGolfer}
+              onDeleteGolfer={handleDeleteGolfer}
               selectedGolferIds={selectedGame ? selectedGame.config.participants.map(p => p.golfer.id) : []}
               onToggleSelectGolfer={() => {}}
             />

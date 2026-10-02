@@ -1,19 +1,24 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import { Golfer, GolferHeadToHead } from '../types';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Linking, Alert } from 'react-native';
+import { Golfer, GolferHeadToHead, Game } from '../types';
 import { theme } from '../theme';
-import { Users, TrendingUp, TrendingDown, DollarSign, Award, ChevronDown, UserCheck } from 'lucide-react-native';
+import { generatePaymentUrl } from '../engine/settlement';
+import { computeGameResults } from '../services/gameStorage';
+import { Users, TrendingUp, TrendingDown, DollarSign, Award, ChevronDown, ChevronUp, UserCheck, Send, ExternalLink, Calendar, Flag } from 'lucide-react-native';
 
 interface PlayerDashboardProps {
   golfers: Golfer[];
   headToHeadMatrix: GolferHeadToHead[];
+  games: Game[];
 }
 
 export const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
   golfers,
   headToHeadMatrix,
+  games,
 }) => {
   const [selectedGolferId, setSelectedGolferId] = useState<string>(golfers[0]?.id || '');
+  const [expandedOpponentId, setExpandedOpponentId] = useState<string | null>(null);
 
   const activeGolferData = headToHeadMatrix.find(h => h.golferId === selectedGolferId) || headToHeadMatrix[0];
   const activeGolfer = golfers.find(g => g.id === selectedGolferId) || golfers[0];
@@ -25,11 +30,34 @@ export const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
   const totalMatches = totalWins + totalLosses + totalTies;
   const winRate = totalMatches > 0 ? Math.round((totalWins / totalMatches) * 100) : 0;
 
+  const toggleExpandOpponent = (oppId: string) => {
+    setExpandedOpponentId(prev => (prev === oppId ? null : oppId));
+  };
+
+  const handleOpenPaymentUrl = (opponent: Golfer, amount: number) => {
+    if (!opponent || amount <= 0) return;
+    const url = generatePaymentUrl(opponent, amount, `Golf Match Settlement - ${activeGolfer.name}`);
+    if (!url) return;
+    Linking.openURL(url).catch(err => {
+      console.warn('Could not open payment link', err);
+      Alert.alert('Payment Link', `Payment URL: ${url}`);
+    });
+  };
+
+  // Helper to find all matches played between activeGolfer and target opponent
+  const getMatchesWithOpponent = (opponentId: string) => {
+    const completedGames = games.filter(g => g.status === 'completed');
+    return completedGames.filter(g => {
+      const pIds = g.config.participants.map(p => p.golfer.id);
+      return pIds.includes(activeGolfer.id) && pIds.includes(opponentId);
+    });
+  };
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
       {/* Title */}
       <Text style={styles.title}>Player Head-to-Head Ledger</Text>
-      <Text style={styles.subtitle}>Net winnings, losses, and match records aggregated across all played games</Text>
+      <Text style={styles.subtitle}>Tap any opponent to expand match history, game details, and auto-settle balances</Text>
 
       {/* Golfer Selector Pills */}
       <Text style={styles.sectionHeader}>Select Player to View Ledger</Text>
@@ -43,7 +71,10 @@ export const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
             <TouchableOpacity
               key={g.id}
               style={[styles.golferChip, isSelected && styles.golferChipSelected]}
-              onPress={() => setSelectedGolferId(g.id)}
+              onPress={() => {
+                setSelectedGolferId(g.id);
+                setExpandedOpponentId(null);
+              }}
               activeOpacity={0.8}
             >
               <UserCheck size={14} color={isSelected ? theme.colors.primary : theme.colors.textMuted} />
@@ -107,7 +138,7 @@ export const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
 
       {/* Opponent Matrix List */}
       <Text style={[styles.sectionHeader, { marginTop: 20 }]}>
-        Opponent Head-to-Head Records ({activeGolferData?.opponents.length || 0})
+        Opponent Head-to-Head Records ({activeGolferData?.opponents.length || 0}) — Tap to expand
       </Text>
 
       {!activeGolferData || activeGolferData.opponents.length === 0 ? (
@@ -120,35 +151,99 @@ export const PlayerDashboard: React.FC<PlayerDashboardProps> = ({
         <View style={{ gap: 10 }}>
           {activeGolferData.opponents.map(opp => {
             const isProfit = opp.netWinnings >= 0;
+            const isExpanded = expandedOpponentId === opp.opponentId;
+            const opponentGolfer = golfers.find(g => g.id === opp.opponentId);
+            const matchesAgainstOpponent = getMatchesWithOpponent(opp.opponentId);
 
             return (
-              <View key={opp.opponentId} style={styles.opponentCard}>
-                <View style={styles.opponentLeft}>
-                  <View style={[styles.oppAvatar, isProfit ? styles.oppAvatarPos : styles.oppAvatarNeg]}>
-                    <Text style={[styles.oppAvatarText, isProfit ? styles.textPos : styles.textNeg]}>
-                      {opp.opponentName.charAt(0)}
-                    </Text>
+              <View key={opp.opponentId} style={styles.opponentWrapperCard}>
+                <TouchableOpacity
+                  style={styles.opponentCard}
+                  onPress={() => toggleExpandOpponent(opp.opponentId)}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.opponentLeft}>
+                    <View style={[styles.oppAvatar, isProfit ? styles.oppAvatarPos : styles.oppAvatarNeg]}>
+                      <Text style={[styles.oppAvatarText, isProfit ? styles.textPos : styles.textNeg]}>
+                        {opp.opponentName.charAt(0)}
+                      </Text>
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.oppName}>{opp.opponentName}</Text>
+                      <Text style={styles.oppRecordText}>
+                        {opp.gamesPlayed} {opp.gamesPlayed === 1 ? 'Game' : 'Games'} • {opp.wins} Win{opp.wins === 1 ? '' : 's'}, {opp.losses} Loss{opp.losses === 1 ? '' : 'es'} {opp.ties > 0 ? `, ${opp.ties} Tie` : ''}
+                      </Text>
+                    </View>
                   </View>
 
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.oppName}>{opp.opponentName}</Text>
-                    <Text style={styles.oppRecordText}>
-                      {opp.gamesPlayed} {opp.gamesPlayed === 1 ? 'Game' : 'Games'} • {opp.wins} Win{opp.wins === 1 ? '' : 's'}, {opp.losses} Loss{opp.losses === 1 ? '' : 'es'} {opp.ties > 0 ? `, ${opp.ties} Tie` : ''}
-                    </Text>
-                  </View>
-                </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={[styles.oppNetBadge, isProfit ? styles.bgPos : styles.bgNeg]}>
+                      {isProfit ? (
+                        <TrendingUp size={14} color="#166534" />
+                      ) : (
+                        <TrendingDown size={14} color="#991b1b" />
+                      )}
+                      <Text style={[styles.oppNetText, isProfit ? styles.textPos : styles.textNeg]}>
+                        {isProfit ? `+$${opp.netWinnings.toFixed(2)}` : `-$${Math.abs(opp.netWinnings).toFixed(2)}`}
+                      </Text>
+                    </View>
 
-                {/* Net Badge */}
-                <View style={[styles.oppNetBadge, isProfit ? styles.bgPos : styles.bgNeg]}>
-                  {isProfit ? (
-                    <TrendingUp size={14} color="#166534" />
-                  ) : (
-                    <TrendingDown size={14} color="#991b1b" />
-                  )}
-                  <Text style={[styles.oppNetText, isProfit ? styles.textPos : styles.textNeg]}>
-                    {isProfit ? `+$${opp.netWinnings.toFixed(2)}` : `-$${Math.abs(opp.netWinnings).toFixed(2)}`}
-                  </Text>
-                </View>
+                    {isExpanded ? (
+                      <ChevronUp size={18} color={theme.colors.textSecondary} />
+                    ) : (
+                      <ChevronDown size={18} color={theme.colors.textSecondary} />
+                    )}
+                  </View>
+                </TouchableOpacity>
+
+                {/* Expanded Accordion Details */}
+                {isExpanded && (
+                  <View style={styles.expandedContent}>
+                    <Text style={styles.expandedSectionTitle}>
+                      Match History against {opp.opponentName} ({matchesAgainstOpponent.length} games)
+                    </Text>
+
+                    <View style={{ gap: 8, marginTop: 8 }}>
+                      {matchesAgainstOpponent.map(game => {
+                        const results = computeGameResults(game);
+                        const dateStr = game.completedAt
+                          ? new Date(game.completedAt).toLocaleDateString()
+                          : new Date(game.createdAt).toLocaleDateString();
+
+                        return (
+                          <View key={game.id} style={styles.gameHistoryRow}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.historyGameTitle}>{game.name}</Text>
+                              <Text style={styles.historyGameSub}>
+                                {game.config.course.name} • {game.config.gameFormat.replace(/_/g, ' ')} • {dateStr}
+                              </Text>
+                            </View>
+
+                            <Text style={styles.historySummaryText}>
+                              {results.overall18.scoreSummary}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+
+                    {/* Auto-Settle Action Button if Active Golfer Owes Money */}
+                    {!isProfit && opponentGolfer && (
+                      <TouchableOpacity
+                        style={styles.settleOpponentBtn}
+                        onPress={() => handleOpenPaymentUrl(opponentGolfer, Math.abs(opp.netWinnings))}
+                        activeOpacity={0.85}
+                      >
+                        <Send size={14} color="#ffffff" />
+                        <Text style={styles.settleOpponentBtnText}>
+                          Settle ${Math.abs(opp.netWinnings).toFixed(2)} with {opponentGolfer.name} via {opponentGolfer.preferredPaymentMethod}
+                        </Text>
+                        <ExternalLink size={13} color="#ffffff" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
               </View>
             );
           })}
@@ -194,7 +289,8 @@ const styles = StyleSheet.create({
   emptyOpponentCard: { backgroundColor: theme.colors.cardBg, borderRadius: 14, padding: 24, borderWidth: 1, borderColor: theme.colors.cardBorder, alignItems: 'center' },
   emptyOpponentTitle: { fontSize: 15, fontWeight: '800', color: theme.colors.textPrimary, marginTop: 8 },
   emptyOpponentSub: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 4, textAlign: 'center' },
-  opponentCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: theme.colors.cardBg, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: theme.colors.cardBorder, ...theme.shadows.card },
+  opponentWrapperCard: { backgroundColor: theme.colors.cardBg, borderRadius: 12, borderWidth: 1, borderColor: theme.colors.cardBorder, overflow: 'hidden', ...theme.shadows.card },
+  opponentCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 12 },
   opponentLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   oppAvatar: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center', borderWidth: 1 },
   oppAvatarPos: { backgroundColor: '#dcfce7', borderColor: '#86efac' },
@@ -204,4 +300,12 @@ const styles = StyleSheet.create({
   oppRecordText: { fontSize: 11, color: theme.colors.textSecondary, marginTop: 1 },
   oppNetBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
   oppNetText: { fontSize: 13, fontWeight: '800' },
+  expandedContent: { backgroundColor: theme.colors.background, padding: 12, borderTopWidth: 1, borderColor: theme.colors.cardBorder },
+  expandedSectionTitle: { fontSize: 12, fontWeight: '800', color: theme.colors.textPrimary, marginBottom: 4 },
+  gameHistoryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: theme.colors.cardBg, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: theme.colors.cardBorder },
+  historyGameTitle: { fontSize: 13, fontWeight: '700', color: theme.colors.textPrimary },
+  historyGameSub: { fontSize: 11, color: theme.colors.textSecondary, marginTop: 1 },
+  historySummaryText: { fontSize: 11, fontWeight: '700', color: theme.colors.primary },
+  settleOpponentBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: theme.colors.primary, paddingVertical: 9, borderRadius: 8, marginTop: 12, ...theme.shadows.button },
+  settleOpponentBtnText: { color: '#ffffff', fontSize: 12, fontWeight: '800' },
 });

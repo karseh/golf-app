@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
 import { MatchConfig, MatchParticipant } from '../types';
 import { getStrokesGivenForHole } from '../engine/handicap';
 import { calculateSkins } from '../engine/skins';
+import { calculateMatchPlay } from '../engine/matchPlay';
 import { ScorecardUploadModal } from './ScorecardUploadModal';
 import { theme } from '../theme';
-import { Camera, ChevronLeft, ChevronRight, Grid, Eye, Flame } from 'lucide-react-native';
+import { Camera, ChevronLeft, ChevronRight, Grid, Eye, Flame, Trophy, Wand2, RefreshCw } from 'lucide-react-native';
 
 interface ScoringGridProps {
   config: MatchConfig;
@@ -29,6 +30,8 @@ export const ScoringGrid: React.FC<ScoringGridProps> = ({
     ? Math.min(...participants.map(p => p.courseHandicap))
     : 0;
 
+  // Compute Hole Results based on game format
+  const matchResults = gameFormat !== 'SKINS' && gameFormat !== 'STROKE_PLAY' ? calculateMatchPlay(config) : null;
   const skinsRes = gameFormat === 'SKINS' ? calculateSkins(config) : null;
 
   const handleScoreChange = (participant: MatchParticipant, holeIndex: number, text: string) => {
@@ -44,6 +47,21 @@ export const ScoringGrid: React.FC<ScoringGridProps> = ({
     const updated = [...participant.grossScores];
     updated[holeIndex] = nextVal;
     onChangeScores(participant.golfer.id, updated);
+  };
+
+  // Quick Tools: Auto-Fill Pars & Reset
+  const handleAutoFillPars = () => {
+    participants.forEach(p => {
+      const filled = p.grossScores.map((s, idx) => (s === null || s === undefined || s === 0 ? holes[idx].par : s));
+      onChangeScores(p.golfer.id, filled);
+    });
+    Alert.alert('Auto-Fill Pars', 'All unplayed hole scores have been populated with course par.');
+  };
+
+  const handleResetScores = () => {
+    participants.forEach(p => {
+      onChangeScores(p.golfer.id, Array(18).fill(null));
+    });
   };
 
   const getSubtotal = (p: MatchParticipant, startHole: number, endHole: number) => {
@@ -71,7 +89,44 @@ export const ScoringGrid: React.FC<ScoringGridProps> = ({
     return styles.scoreDoubleBogey;
   };
 
+  // Helper to determine hole winner / low score display for hole header
+  const getHoleResultText = (holeNum: number) => {
+    const holeIdx = holeNum - 1;
+
+    if (gameFormat === 'SKINS' && skinsRes) {
+      const sHole = skinsRes.holeByHole[holeIdx];
+      if (!sHole || sHole.lowScore === null) return '-';
+      if (sHole.isTie) return `Tie (${sHole.skinsAtStake}S)`;
+      if (sHole.winnerGolferId) {
+        const winner = participants.find(p => p.golfer.id === sHole.winnerGolferId);
+        return `${winner?.golfer.name.split(' ')[0]} (${sHole.skinsWon}S)`;
+      }
+    } else if (matchResults) {
+      const mHole = matchResults.holeByHole[holeIdx];
+      if (!mHole) return '-';
+      if (mHole.winnerTeamId) return `Team ${mHole.winnerTeamId}`;
+      if (mHole.winnerGolferId) {
+        const winner = participants.find(p => p.golfer.id === mHole.winnerGolferId);
+        return `${winner?.golfer.name.split(' ')[0]} Won`;
+      }
+      if (mHole.isHalved && mHole.scores.some(s => s.gross > 0)) return 'Halved';
+    } else if (gameFormat === 'STROKE_PLAY') {
+      const holeScores = participants
+        .map(p => ({ golferName: p.golfer.name.split(' ')[0], gross: p.grossScores[holeIdx] }))
+        .filter(s => s.gross !== null && s.gross !== undefined && s.gross > 0);
+
+      if (holeScores.length === 0) return '-';
+      const minGross = Math.min(...holeScores.map(s => s.gross as number));
+      const winners = holeScores.filter(s => s.gross === minGross);
+      if (winners.length === 1) return `${winners[0].golferName} (${minGross})`;
+      return `Tied (${minGross})`;
+    }
+
+    return '-';
+  };
+
   const activeHole = holes[selectedHoleNum - 1];
+  const activeHoleResult = getHoleResultText(selectedHoleNum);
 
   return (
     <View style={styles.container}>
@@ -82,10 +137,17 @@ export const ScoringGrid: React.FC<ScoringGridProps> = ({
           <Text style={styles.subtitle}>{config.course.name} • {selectedTee.name} Tee (Par {selectedTee.par})</Text>
         </View>
 
-        <TouchableOpacity style={styles.ocrButton} onPress={() => setShowOcrModal(true)}>
-          <Camera size={15} color="#ffffff" />
-          <Text style={styles.ocrButtonText}>AI Scan</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 6 }}>
+          <TouchableOpacity style={styles.quickToolBtn} onPress={handleAutoFillPars}>
+            <Wand2 size={13} color={theme.colors.primary} />
+            <Text style={styles.quickToolText}>Fill Par</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.ocrButton} onPress={() => setShowOcrModal(true)}>
+            <Camera size={15} color="#ffffff" />
+            <Text style={styles.ocrButtonText}>AI Scan</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* View Switcher & Skins Banner */}
@@ -123,30 +185,55 @@ export const ScoringGrid: React.FC<ScoringGridProps> = ({
             {/* Header Row */}
             <View style={styles.tableRowHeader}>
               <Text style={[styles.cell, styles.golferHeaderCell]}>Golfer / Hole</Text>
-              {holes.map(h => {
-                const holeSkinInfo = skinsRes?.holeByHole[h.holeNumber - 1];
-                const isSkinWon = holeSkinInfo && holeSkinInfo.winnerGolferId;
-                const isCarried = holeSkinInfo && holeSkinInfo.isTie;
-
-                return (
-                  <View key={h.holeNumber} style={[styles.cell, styles.holeHeaderCell, isSkinWon ? { backgroundColor: '#fef3c7' } : isCarried ? { backgroundColor: '#fee2e2' } : null]}>
-                    <Text style={styles.holeNumText}>{h.holeNumber}</Text>
-                    <Text style={styles.holeSubText}>P:{h.par}</Text>
-                    {gameFormat === 'SKINS' && isCarried ? (
-                      <Text style={styles.skinCarryTag}>Tie ({holeSkinInfo.skinsAtStake}S)</Text>
-                    ) : gameFormat === 'SKINS' && isSkinWon ? (
-                      <Text style={styles.skinWinTag}>Won ({holeSkinInfo.skinsWon}S)</Text>
-                    ) : (
-                      <Text style={styles.holeSubText}>H:{h.handicapIndex}</Text>
-                    )}
-                  </View>
-                );
-              })}
+              {holes.map(h => (
+                <View key={h.holeNumber} style={[styles.cell, styles.holeHeaderCell]}>
+                  <Text style={styles.holeNumText}>{h.holeNumber}</Text>
+                  <Text style={styles.holeSubText}>P:{h.par}</Text>
+                  <Text style={styles.holeSubText}>H:{h.handicapIndex}</Text>
+                </View>
+              ))}
               <Text style={[styles.cell, styles.summaryHeaderCell]}>F9</Text>
               <Text style={[styles.cell, styles.summaryHeaderCell]}>B9</Text>
               <Text style={[styles.cell, styles.summaryHeaderCell]}>TOT</Text>
               {gameFormat === 'SKINS' && (
                 <Text style={[styles.cell, styles.summaryHeaderCell, { color: '#b45309' }]}>SKINS</Text>
+              )}
+            </View>
+
+            {/* DEDICATED HOLE RESULT ROW */}
+            <View style={styles.tableRowHoleResult}>
+              <View style={[styles.cell, styles.golferHeaderCell, { backgroundColor: '#f0fdf4' }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Trophy size={13} color={theme.colors.primary} />
+                  <Text style={styles.holeResultRowLabel}>Hole Winner</Text>
+                </View>
+              </View>
+              {holes.map(h => {
+                const resText = getHoleResultText(h.holeNumber);
+                const isTie = resText.toLowerCase().includes('tie') || resText.toLowerCase().includes('halved');
+                const isWin = resText !== '-' && !isTie;
+
+                return (
+                  <View key={h.holeNumber} style={[styles.cell, styles.holeResultCell, isWin ? styles.winCellBg : isTie ? styles.tieCellBg : null]}>
+                    <Text style={[styles.holeResultCellText, isWin ? styles.winCellText : isTie ? styles.tieCellText : null]} numberOfLines={1}>
+                      {resText}
+                    </Text>
+                  </View>
+                );
+              })}
+              <View style={[styles.cell, styles.summaryHeaderCell, { backgroundColor: '#f0fdf4' }]}>
+                <Text style={styles.holeResultRowLabel}>-</Text>
+              </View>
+              <View style={[styles.cell, styles.summaryHeaderCell, { backgroundColor: '#f0fdf4' }]}>
+                <Text style={styles.holeResultRowLabel}>-</Text>
+              </View>
+              <View style={[styles.cell, styles.summaryHeaderCell, { backgroundColor: '#f0fdf4' }]}>
+                <Text style={styles.holeResultRowLabel}>-</Text>
+              </View>
+              {gameFormat === 'SKINS' && (
+                <View style={[styles.cell, styles.summaryHeaderCell, { backgroundColor: '#fef3c7' }]}>
+                  <Text style={styles.holeResultRowLabel}>-</Text>
+                </View>
               )}
             </View>
 
@@ -235,6 +322,10 @@ export const ScoringGrid: React.FC<ScoringGridProps> = ({
             <View style={{ alignItems: 'center' }}>
               <Text style={styles.holeFocusTitle}>Hole {activeHole.holeNumber}</Text>
               <Text style={styles.holeFocusSub}>Par {activeHole.par} • Handicap Index #{activeHole.handicapIndex}</Text>
+              <View style={styles.holeFocusOutcomeBadge}>
+                <Trophy size={12} color={theme.colors.primary} />
+                <Text style={styles.holeFocusOutcomeText}>Hole Result: {activeHoleResult}</Text>
+              </View>
             </View>
 
             <TouchableOpacity
@@ -295,6 +386,8 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   title: { fontSize: 22, fontWeight: '800', color: theme.colors.textPrimary, letterSpacing: -0.3 },
   subtitle: { fontSize: 13, color: theme.colors.textSecondary },
+  quickToolBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.colors.primaryLight, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: theme.colors.primaryBorder },
+  quickToolText: { color: theme.colors.primary, fontWeight: '700', fontSize: 11 },
   ocrButton: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.colors.primary, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8 },
   ocrButtonText: { color: '#ffffff', fontWeight: '700', fontSize: 12 },
   viewSwitcherRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
@@ -307,14 +400,20 @@ const styles = StyleSheet.create({
   skinsSummaryText: { fontSize: 11, fontWeight: '800', color: '#b45309' },
   gridScrollView: { backgroundColor: theme.colors.cardBg, borderRadius: 14, borderWidth: 1, borderColor: theme.colors.cardBorder, ...theme.shadows.card },
   tableRowHeader: { flexDirection: 'row', backgroundColor: theme.colors.subtleBg, borderBottomWidth: 1, borderColor: theme.colors.cardBorder },
+  tableRowHoleResult: { flexDirection: 'row', backgroundColor: '#f8fafc', borderBottomWidth: 1.5, borderColor: theme.colors.cardBorder },
+  holeResultRowLabel: { fontSize: 10, fontWeight: '800', color: theme.colors.primary },
+  holeResultCell: { width: 52, paddingVertical: 4, paddingHorizontal: 2, justifyContent: 'center', alignItems: 'center' },
+  holeResultCellText: { fontSize: 9, fontWeight: '800', color: theme.colors.textSecondary, textAlign: 'center' },
+  winCellBg: { backgroundColor: '#dcfce7' },
+  winCellText: { color: '#166534' },
+  tieCellBg: { backgroundColor: '#fee2e2' },
+  tieCellText: { color: '#991b1b' },
   tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderColor: theme.colors.cardBorder },
   cell: { width: 52, paddingVertical: 8, justifyContent: 'center', alignItems: 'center', borderRightWidth: 1, borderColor: theme.colors.cardBorder },
   golferHeaderCell: { width: 130, paddingHorizontal: 10, alignItems: 'flex-start' },
   holeHeaderCell: { width: 52, paddingVertical: 4 },
   holeNumText: { fontSize: 12, fontWeight: '800', color: theme.colors.textPrimary },
   holeSubText: { fontSize: 9, color: theme.colors.textMuted },
-  skinCarryTag: { fontSize: 8, fontWeight: '800', color: '#dc2626' },
-  skinWinTag: { fontSize: 8, fontWeight: '800', color: '#b45309' },
   summaryHeaderCell: { width: 58, fontWeight: '800', color: theme.colors.textPrimary },
   golferName: { fontSize: 13, fontWeight: '700', color: theme.colors.textPrimary },
   chBadge: { fontSize: 10, color: theme.colors.textSecondary, marginTop: 1 },
@@ -336,6 +435,8 @@ const styles = StyleSheet.create({
   holeNavButton: { width: 32, height: 32, borderRadius: 16, backgroundColor: theme.colors.subtleBg, justifyContent: 'center', alignItems: 'center' },
   holeFocusTitle: { fontSize: 16, fontWeight: '800', color: theme.colors.textPrimary },
   holeFocusSub: { fontSize: 11, color: theme.colors.textSecondary, marginTop: 1 },
+  holeFocusOutcomeBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.colors.primaryLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, marginTop: 4 },
+  holeFocusOutcomeText: { fontSize: 11, fontWeight: '800', color: theme.colors.primary },
   focusGolferCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: theme.colors.background, borderRadius: 10, padding: 12, borderWidth: 1, borderColor: theme.colors.cardBorder },
   focusGolferName: { fontSize: 14, fontWeight: '700', color: theme.colors.textPrimary },
   focusStrokesText: { fontSize: 11, color: theme.colors.textSecondary, marginTop: 1 },

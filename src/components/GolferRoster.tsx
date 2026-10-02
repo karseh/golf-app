@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
 import { Golfer, PaymentMethod } from '../types';
 import { theme } from '../theme';
-import { Plus, Check, Award, CreditCard } from 'lucide-react-native';
+import { Plus, Check, Award, CreditCard, Edit2, Trash2, X } from 'lucide-react-native';
 
 interface GolferRosterProps {
   golfers: Golfer[];
   onAddGolfer: (golfer: Golfer) => void;
+  onUpdateGolfer?: (golfer: Golfer) => void;
+  onDeleteGolfer?: (golferId: string) => void;
   selectedGolferIds: string[];
   onToggleSelectGolfer: (golferId: string) => void;
 }
@@ -21,6 +23,8 @@ const paymentColors: Record<PaymentMethod, string> = {
 export const GolferRoster: React.FC<GolferRosterProps> = ({
   golfers,
   onAddGolfer,
+  onUpdateGolfer,
+  onDeleteGolfer,
   selectedGolferIds,
   onToggleSelectGolfer,
 }) => {
@@ -29,8 +33,9 @@ export const GolferRoster: React.FC<GolferRosterProps> = ({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('VENMO');
   const [paymentHandle, setPaymentHandle] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingGolferId, setEditingGolferId] = useState<string | null>(null);
 
-  const handleCreate = () => {
+  const handleCreateOrUpdate = () => {
     if (!name.trim()) {
       Alert.alert('Validation Error', 'Please enter a golfer name');
       return;
@@ -42,18 +47,51 @@ export const GolferRoster: React.FC<GolferRosterProps> = ({
       return;
     }
 
-    const newGolfer: Golfer = {
-      id: `golfer-${Date.now()}`,
-      name: name.trim(),
-      handicapIndex: hp,
-      preferredPaymentMethod: paymentMethod,
-      paymentHandle: paymentHandle.trim() || name.toLowerCase().replace(/\s+/g, ''),
-    };
+    if (editingGolferId && onUpdateGolfer) {
+      const updated: Golfer = {
+        id: editingGolferId,
+        name: name.trim(),
+        handicapIndex: hp,
+        preferredPaymentMethod: paymentMethod,
+        paymentHandle: paymentHandle.trim() || name.toLowerCase().replace(/\s+/g, ''),
+      };
+      onUpdateGolfer(updated);
+      setEditingGolferId(null);
+    } else {
+      const newGolfer: Golfer = {
+        id: `golfer-${Date.now()}`,
+        name: name.trim(),
+        handicapIndex: hp,
+        preferredPaymentMethod: paymentMethod,
+        paymentHandle: paymentHandle.trim() || name.toLowerCase().replace(/\s+/g, ''),
+      };
+      onAddGolfer(newGolfer);
+    }
 
-    onAddGolfer(newGolfer);
     setName('');
     setPaymentHandle('');
     setShowAddForm(false);
+  };
+
+  const handleStartEdit = (golfer: Golfer) => {
+    setEditingGolferId(golfer.id);
+    setName(golfer.name);
+    setHandicapIndex(golfer.handicapIndex.toString());
+    setPaymentMethod(golfer.preferredPaymentMethod);
+    setPaymentHandle(golfer.paymentHandle);
+    setShowAddForm(true);
+  };
+
+  const handleDelete = (golfer: Golfer) => {
+    if (!onDeleteGolfer) return;
+    Alert.alert(
+      'Delete Golfer Profile',
+      `Are you sure you want to remove "${golfer.name}" from your roster?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => onDeleteGolfer(golfer.id) },
+      ]
+    );
   };
 
   const getInitials = (str: string) => {
@@ -68,10 +106,20 @@ export const GolferRoster: React.FC<GolferRosterProps> = ({
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Player Roster</Text>
-          <Text style={styles.subtitle}>Select players for the match & setup payment profiles</Text>
+          <Text style={styles.subtitle}>Select players for the match & manage payment profiles</Text>
         </View>
 
-        <TouchableOpacity style={styles.addToggleBtn} onPress={() => setShowAddForm(!showAddForm)}>
+        <TouchableOpacity style={styles.addToggleBtn} onPress={() => {
+          if (showAddForm) {
+            setShowAddForm(false);
+            setEditingGolferId(null);
+          } else {
+            setShowAddForm(true);
+            setEditingGolferId(null);
+            setName('');
+            setPaymentHandle('');
+          }
+        }}>
           <Plus size={16} color={showAddForm ? theme.colors.textSecondary : '#ffffff'} />
           <Text style={[styles.addToggleText, showAddForm && { color: theme.colors.textSecondary }]}>
             {showAddForm ? 'Cancel' : 'Add Player'}
@@ -79,10 +127,10 @@ export const GolferRoster: React.FC<GolferRosterProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* Add New Golfer Form */}
+      {/* Add / Edit Golfer Form */}
       {showAddForm && (
         <View style={styles.addCard}>
-          <Text style={styles.cardHeader}>New Player Profile</Text>
+          <Text style={styles.cardHeader}>{editingGolferId ? 'Edit Player Profile' : 'New Player Profile'}</Text>
 
           <View style={styles.formRow}>
             <View style={[styles.inputGroup, { flex: 2 }]}>
@@ -145,15 +193,15 @@ export const GolferRoster: React.FC<GolferRosterProps> = ({
             />
           </View>
 
-          <TouchableOpacity style={styles.saveButton} onPress={handleCreate}>
-            <Text style={styles.saveButtonText}>Save Player Profile</Text>
+          <TouchableOpacity style={styles.saveButton} onPress={handleCreateOrUpdate}>
+            <Text style={styles.saveButtonText}>{editingGolferId ? 'Update Player Profile' : 'Save Player Profile'}</Text>
           </TouchableOpacity>
         </View>
       )}
 
       {/* Roster Section Header */}
       <View style={styles.counterRow}>
-        <Text style={styles.sectionHeader}>Saved Players</Text>
+        <Text style={styles.sectionHeader}>Saved Players ({golfers.length})</Text>
         <View style={styles.badge}>
           <Text style={styles.badgeText}>{selectedGolferIds.length} Selected for Match</Text>
         </View>
@@ -166,44 +214,60 @@ export const GolferRoster: React.FC<GolferRosterProps> = ({
           const brandColor = paymentColors[item.preferredPaymentMethod];
 
           return (
-            <TouchableOpacity
-              key={item.id}
-              style={[styles.golferCard, isSelected && styles.golferCardSelected]}
-              onPress={() => onToggleSelectGolfer(item.id)}
-              activeOpacity={0.8}
-            >
-              {/* Avatar Circle */}
-              <View style={[styles.avatar, isSelected ? { backgroundColor: theme.colors.primaryLight } : { backgroundColor: theme.colors.subtleBg }]}>
-                <Text style={[styles.avatarText, isSelected ? { color: theme.colors.primary } : { color: theme.colors.textSecondary }]}>
-                  {getInitials(item.name)}
-                </Text>
-              </View>
+            <View key={item.id} style={[styles.golferCard, isSelected && styles.golferCardSelected]}>
+              <TouchableOpacity
+                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}
+                onPress={() => onToggleSelectGolfer(item.id)}
+                activeOpacity={0.8}
+              >
+                {/* Avatar Circle */}
+                <View style={[styles.avatar, isSelected ? { backgroundColor: theme.colors.primaryLight } : { backgroundColor: theme.colors.subtleBg }]}>
+                  <Text style={[styles.avatarText, isSelected ? { color: theme.colors.primary } : { color: theme.colors.textSecondary }]}>
+                    {getInitials(item.name)}
+                  </Text>
+                </View>
 
-              {/* Details */}
-              <View style={{ flex: 1 }}>
-                <Text style={styles.golferName}>{item.name}</Text>
-                <View style={styles.metaRow}>
-                  <View style={styles.metaPill}>
-                    <Award size={11} color={theme.colors.primary} />
-                    <Text style={styles.metaText}>
-                      HCP: {item.handicapIndex >= 0 ? item.handicapIndex.toFixed(1) : `+${Math.abs(item.handicapIndex).toFixed(1)}`}
-                    </Text>
-                  </View>
+                {/* Details */}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.golferName}>{item.name}</Text>
+                  <View style={styles.metaRow}>
+                    <View style={styles.metaPill}>
+                      <Award size={11} color={theme.colors.primary} />
+                      <Text style={styles.metaText}>
+                        HCP: {item.handicapIndex >= 0 ? item.handicapIndex.toFixed(1) : `+${Math.abs(item.handicapIndex).toFixed(1)}`}
+                      </Text>
+                    </View>
 
-                  <View style={[styles.metaPill, { backgroundColor: `${brandColor}12` }]}>
-                    <CreditCard size={11} color={brandColor} />
-                    <Text style={[styles.metaText, { color: brandColor, fontWeight: '700' }]}>
-                      {item.preferredPaymentMethod}: {item.paymentHandle}
-                    </Text>
+                    <View style={[styles.metaPill, { backgroundColor: `${brandColor}12` }]}>
+                      <CreditCard size={11} color={brandColor} />
+                      <Text style={[styles.metaText, { color: brandColor, fontWeight: '700' }]}>
+                        {item.preferredPaymentMethod}: {item.paymentHandle}
+                      </Text>
+                    </View>
                   </View>
                 </View>
-              </View>
+              </TouchableOpacity>
 
-              {/* Checkmark Radio */}
-              <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-                {isSelected && <Check size={14} color="#ffffff" strokeWidth={3} />}
+              {/* Action Buttons & Checkbox */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <TouchableOpacity style={styles.iconBtn} onPress={() => handleStartEdit(item)}>
+                  <Edit2 size={14} color={theme.colors.textSecondary} />
+                </TouchableOpacity>
+
+                {onDeleteGolfer && golfers.length > 2 && (
+                  <TouchableOpacity style={styles.iconBtn} onPress={() => handleDelete(item)}>
+                    <Trash2 size={14} color="#dc2626" />
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity
+                  style={[styles.checkbox, isSelected && styles.checkboxSelected]}
+                  onPress={() => onToggleSelectGolfer(item.id)}
+                >
+                  {isSelected && <Check size={14} color="#ffffff" strokeWidth={3} />}
+                </TouchableOpacity>
               </View>
-            </TouchableOpacity>
+            </View>
           );
         })}
       </View>
@@ -242,6 +306,7 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', gap: 6, marginTop: 4, flexWrap: 'wrap' },
   metaPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.colors.background, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   metaText: { fontSize: 11, color: theme.colors.textSecondary },
+  iconBtn: { padding: 6, borderRadius: 6, backgroundColor: theme.colors.subtleBg },
   checkbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: theme.colors.cardBorder, justifyContent: 'center', alignItems: 'center' },
   checkboxSelected: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
 });
