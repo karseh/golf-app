@@ -23,15 +23,22 @@ buildscript {
 
 apply plugin: "com.facebook.react.rootproject"
 
+def getNodeBinary() {
+    if (new File("/opt/homebrew/bin/node").exists()) return "/opt/homebrew/bin/node"
+    if (new File("/usr/local/bin/node").exists()) return "/usr/local/bin/node"
+    return "node"
+}
+def nodeCmd = getNodeBinary()
+
 allprojects {
     repositories {
         maven {
             // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
-            url(new File(['node', '--print', "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim(), '../android'))
+            url(new File([nodeCmd, '--print', "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim(), '../android'))
         }
         maven {
             // Android JSC is installed from npm
-            url(new File(['node', '--print', "require.resolve('jsc-android/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim(), '../dist'))
+            url(new File([nodeCmd, '--print', "require.resolve('jsc-android/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim(), '../dist'))
         }
 
         google()
