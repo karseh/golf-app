@@ -1,10 +1,9 @@
 pluginManagement {
-  def version = providers.exec {
-    commandLine("node", "-e", "console.log(require('react-native/package.json').version);")
-  }.standardOutput.asText.get().trim()
+  def nodeCmd = new File("/opt/homebrew/bin/node").exists() ? "/opt/homebrew/bin/node" : (new File("/usr/local/bin/node").exists() ? "/usr/local/bin/node" : "node")
+  def version = [nodeCmd, "-e", "console.log(require('react-native/package.json').version);"].execute(null, rootDir).text.trim()
   def (_, reactNativeMinor, reactNativePatch) = version.split("-")[0].tokenize('.').collect { it.toInteger() }
 
-  includeBuild(new File(["node", "--print", "require.resolve('@react-native/gradle-plugin/package.json')"].execute(null, rootDir).text.trim()).getParentFile().toString())
+  includeBuild(new File([nodeCmd, "--print", "require.resolve('@react-native/gradle-plugin/package.json')"].execute(null, rootDir).text.trim()).getParentFile().toString())
   if(reactNativeMinor == 74 && reactNativePatch <= 3){
     includeBuild("react-settings-plugin")
   }
@@ -12,10 +11,15 @@ pluginManagement {
 
 plugins { id("com.facebook.react.settings") }
 
-def getRNMinorVersion() {
-  def version = providers.exec {
-    commandLine("node", "-e", "console.log(require('react-native/package.json').version);")
-  }.standardOutput.asText.get().trim()
+def getNodeBinary() {
+  if (new File("/opt/homebrew/bin/node").exists()) return "/opt/homebrew/bin/node"
+  if (new File("/usr/local/bin/node").exists()) return "/usr/local/bin/node"
+  return "node"
+}
+def nodeCmd = getNodeBinary()
+
+def getRNMinorVersion(cmd) {
+  def version = [cmd, "-e", "console.log(require('react-native/package.json').version);"].execute(null, rootDir).text.trim()
 
   def coreVersion = version.split("-")[0]
   def (major, minor, patch) = coreVersion.tokenize('.').collect { it.toInteger() }
@@ -23,12 +27,12 @@ def getRNMinorVersion() {
   return minor
 }
 
-if (getRNMinorVersion() >= 75) {
+if (getRNMinorVersion(nodeCmd) >= 75) {
   extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
     if (System.getenv('EXPO_UNSTABLE_CORE_AUTOLINKING') == '1') {
       println('\u001B[32mUsing expo-modules-autolinking as core autolinking source\u001B[0m')
       def command = [
-        'node',
+        nodeCmd,
         '--no-warnings',
         '--eval',
         'require(require.resolve(\'expo-modules-autolinking\', { paths: [require.resolve(\'expo/package.json\')] }))(process.argv.slice(1))',
@@ -49,18 +53,18 @@ rootProject.name = 'GolfMatch Pro'
 dependencyResolutionManagement {
   versionCatalogs {
     reactAndroidLibs {
-      from(files(new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim(), "../gradle/libs.versions.toml")))
+      from(files(new File([nodeCmd, "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim(), "../gradle/libs.versions.toml")))
     }
   }
 }
 
-apply from: new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim(), "../scripts/autolinking.gradle");
+apply from: new File([nodeCmd, "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim(), "../scripts/autolinking.gradle");
 useExpoModules()
 
-if (getRNMinorVersion() < 75) {
-  apply from: new File(["node", "--print", "require.resolve('@react-native-community/cli-platform-android/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim(), "../native_modules.gradle");
+if (getRNMinorVersion(nodeCmd) < 75) {
+  apply from: new File([nodeCmd, "--print", "require.resolve('@react-native-community/cli-platform-android/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim(), "../native_modules.gradle");
   applyNativeModulesSettingsGradle(settings)
 }
 
 include ':app'
-includeBuild(new File(["node", "--print", "require.resolve('@react-native/gradle-plugin/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim()).getParentFile())
+includeBuild(new File([nodeCmd, "--print", "require.resolve('@react-native/gradle-plugin/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim()).getParentFile())

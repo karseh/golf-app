@@ -23,11 +23,8 @@ static def versionToNumber(major, minor, patch) {
 }
 
 def getRNVersion() {
-  def version = providers.exec {
-    workingDir(projectDir)
-    commandLine(nodeCmd, "-e", "console.log(require('react-native/package.json').version);")
-  }.standardOutput.asText.get().trim()
-
+  def nodeCmd = getNodeBinary()
+  def version = [nodeCmd, "-e", "console.log(require('react-native/package.json').version);"].execute([], projectDir).text.trim()
   def coreVersion = version.split("-")[0]
   def (major, minor, patch) = coreVersion.tokenize('.').collect { it.toInteger() }
 
