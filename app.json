@@ -4,26 +4,9 @@
     "slug": "golf-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "resizeMode": "contain",
-      "backgroundColor": "#059669"
-    },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
-    "ios": {
-      "supportsTablet": true
-    },
     "android": {
-      "package": "com.karseh.golfmatchpro",
-      "adaptiveIcon": {
-        "backgroundColor": "#059669"
-      }
-    },
-    "web": {
-      "favicon": "./assets/favicon.png"
+      "package": "com.karseh.golfmatchpro"
     }
   }
 }
