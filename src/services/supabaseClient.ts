@@ -1,15 +1,10 @@
 /**
- * Optional Supabase Cloud Database Adapter for GolfMatch Pro
- * 
- * To enable Cloud Database persistence & multi-device sync:
- * 1. Create a free project at https://supabase.com
- * 2. Create a table 'games' with columns: id (text PRIMARY KEY), data (jsonb), updated_at (timestamp)
- * 3. Replace SUPABASE_URL and SUPABASE_ANON_KEY below or pass via environment variables.
+ * Supabase Cloud Database Adapter for GolfMatch Pro
  */
 
 export const SUPABASE_CONFIG = {
-  url: process.env.EXPO_PUBLIC_SUPABASE_URL || '',
-  anonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+  url: process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://pzfkubpplqzcrebyzne.supabase.co',
+  anonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_GnkwIX67eD3UR8oXZd1wDA_Y8ETtGju',
 };
 
 export const isSupabaseConfigured = (): boolean => {
@@ -17,7 +12,7 @@ export const isSupabaseConfigured = (): boolean => {
 };
 
 /**
- * Fetch games from Cloud Supabase Database (if configured)
+ * Fetch games from Cloud Supabase Database
  */
 export async function fetchGamesFromCloud(): Promise<any[] | null> {
   if (!isSupabaseConfigured()) return null;
@@ -40,7 +35,7 @@ export async function fetchGamesFromCloud(): Promise<any[] | null> {
 }
 
 /**
- * Sync game to Cloud Supabase Database (if configured)
+ * Sync game to Cloud Supabase Database
  */
 export async function syncGameToCloud(game: any): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
